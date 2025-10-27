@@ -11,19 +11,21 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <div className="hidden lg:block">
+    <div className="min-h-screen bg-gray-50">
+      {/* Fixed Sidebar */}
+      <div className="hidden lg:block fixed left-0 top-0 z-30">
         <Sidebar />
       </div>
       
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Navbar */}
-        <Navbar />
+      <div className="lg:ml-64">
+        {/* Fixed Navbar */}
+        <div className="fixed top-0 right-0 left-0 lg:left-64 z-20">
+          <Navbar />
+        </div>
         
-        {/* Main Content */}
-        <main className="flex-1 py-6">
+        {/* Main Content with proper spacing */}
+        <main className="pt-16 py-6 min-h-screen">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <Routes>
               <Route path="/projects" element={<ProjectsList />} />

@@ -1,10 +1,10 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 
-export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
+export default function TaskCard({ task, onEdit, onDelete, onStatusChange, onViewDetails }) {
   const { user } = useAuth();
   const isOwner = user?.role === 'owner';
-  const isAssignee = task.assigneeId === user?.id;
+  const isAssignee = task.assignedTo?._id === user?.id;
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -53,9 +53,12 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
   const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'completed';
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 border border-gray-200 ${
-      isOverdue ? 'border-red-200 bg-red-50' : ''
-    }`}>
+    <div 
+      className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 border border-gray-200 cursor-pointer ${
+        isOverdue ? 'border-red-200 bg-red-50' : ''
+      }`}
+      onClick={() => onViewDetails && onViewDetails(task)}
+    >
       <div className="p-4">
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
@@ -68,7 +71,10 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
           {(isOwner || isAssignee) && (
             <div className="flex items-center space-x-2 ml-4">
               <button
-                onClick={() => onEdit(task)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(task);
+                }}
                 className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
                 title="Edit task"
               >
@@ -78,7 +84,10 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
               </button>
               {isOwner && (
                 <button
-                  onClick={() => onDelete(task.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(task._id);
+                  }}
                   className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                   title="Delete task"
                 >
@@ -106,7 +115,10 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
           {/* Status Change Button */}
           {(isOwner || isAssignee) && task.status !== 'completed' && (
             <button
-              onClick={() => onStatusChange(task)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStatusChange(task);
+              }}
               className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
             >
               Mark Complete
@@ -135,10 +147,10 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
             <div className="flex items-center space-x-2">
               <div className="w-6 h-6 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
                 <span className="text-white text-xs font-medium">
-                  {task.assignee?.name?.charAt(0)?.toUpperCase() || 'U'}
+                  {task.assignedTo?.name?.charAt(0)?.toUpperCase() || 'U'}
                 </span>
               </div>
-              <span>{task.assignee?.name || 'Unassigned'}</span>
+              <span>{task.assignedTo?.name || 'Unassigned'}</span>
             </div>
             
             {/* Due Date */}

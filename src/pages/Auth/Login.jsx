@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { z } from "zod";
 import { loginSchema } from "../../utils/validators";
-import { mockLogin } from "../../api/auth";
+import { login as apiLogin } from "../../api/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
@@ -24,7 +24,7 @@ export default function Login() {
     
     try {
       loginSchema.parse(form);
-      const res = await mockLogin(form);
+      const res = await apiLogin(form);
       login(res.user);
       navigate("/projects");
     } catch (err) {

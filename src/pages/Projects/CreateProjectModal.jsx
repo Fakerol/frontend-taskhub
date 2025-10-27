@@ -4,15 +4,13 @@ import Modal from '../../components/Modal';
 
 const projectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(100, 'Project name must be less than 100 characters'),
-  description: z.string().min(1, 'Description is required').max(500, 'Description must be less than 500 characters'),
-  status: z.enum(['planning', 'active', 'on_hold', 'completed'])
+  description: z.string().max(500, 'Description must be less than 500 characters').optional()
 });
 
 export default function CreateProjectModal({ isOpen, onClose, onSubmit, project, title }) {
   const [form, setForm] = useState({
     name: '',
-    description: '',
-    status: 'planning'
+    description: ''
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -21,14 +19,12 @@ export default function CreateProjectModal({ isOpen, onClose, onSubmit, project,
     if (project) {
       setForm({
         name: project.name || '',
-        description: project.description || '',
-        status: project.status || 'planning'
+        description: project.description || ''
       });
     } else {
       setForm({
         name: '',
-        description: '',
-        status: 'planning'
+        description: ''
       });
     }
     setErrors({});
@@ -97,7 +93,7 @@ export default function CreateProjectModal({ isOpen, onClose, onSubmit, project,
 
         <div>
           <label htmlFor="description" className="block text-sm font-semibold text-gray-700 mb-2">
-            Description *
+            Description
           </label>
           <textarea
             id="description"
@@ -108,7 +104,7 @@ export default function CreateProjectModal({ isOpen, onClose, onSubmit, project,
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none ${
               errors.description ? 'border-red-300 bg-red-50' : 'border-gray-300'
             }`}
-            placeholder="Describe your project..."
+            placeholder="Project description (optional)..."
             disabled={isSubmitting}
           />
           {errors.description && (
@@ -116,24 +112,6 @@ export default function CreateProjectModal({ isOpen, onClose, onSubmit, project,
           )}
         </div>
 
-        <div>
-          <label htmlFor="status" className="block text-sm font-semibold text-gray-700 mb-2">
-            Status
-          </label>
-          <select
-            id="status"
-            name="status"
-            value={form.status}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-            disabled={isSubmitting}
-          >
-            <option value="planning">Planning</option>
-            <option value="active">Active</option>
-            <option value="on_hold">On Hold</option>
-            <option value="completed">Completed</option>
-          </select>
-        </div>
 
         <div className="flex justify-end space-x-3 pt-4">
           <button

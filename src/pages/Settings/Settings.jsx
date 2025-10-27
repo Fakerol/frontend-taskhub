@@ -285,9 +285,9 @@ export default function Settings() {
                     <p className="text-sm text-red-700">Permanently delete your account and all data</p>
                   </div>
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
                       if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-                        logout();
+                        await logout();
                       }
                     }}
                     className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"

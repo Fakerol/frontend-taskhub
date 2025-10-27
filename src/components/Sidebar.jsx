@@ -43,7 +43,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className={`bg-white shadow-lg border-r border-gray-200 transition-all duration-300 h-screen ${
+    <div className={`bg-white/95 backdrop-blur-sm shadow-lg border-r border-gray-200 transition-all duration-300 h-screen overflow-y-auto ${
       isCollapsed ? 'w-16' : 'w-64'
     }`}>
       <div className="flex flex-col h-full">
