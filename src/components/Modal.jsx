@@ -65,3 +65,4 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
   );
 }
 
+

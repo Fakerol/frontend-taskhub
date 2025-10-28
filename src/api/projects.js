@@ -297,3 +297,4 @@ export async function getProjectActivity(projectId) {
   return mockActivityLog.filter(activity => activity.projectId === parseInt(projectId));
 }
 
+
