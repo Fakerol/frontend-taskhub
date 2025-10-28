@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { getProject, getProjectActivity } from '../../api/projects';
+import { getProject } from '../../api/projects';
+import { api } from '../../api/auth';
 import { useTasks } from '../../hooks/useTasks';
 import TaskCard from '../../components/TaskCard';
 import Modal from '../../components/Modal';
@@ -12,7 +13,9 @@ export default function ProjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const [project, setProject] = useState(null);
-  const [activity, setActivity] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [activityPagination, setActivityPagination] = useState(null);
+  const [activityPage, setActivityPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -45,15 +48,8 @@ export default function ProjectDetail() {
         const projectData = await getProject(id);
         setProject(projectData);
         
-        // Try to fetch activity data, but don't fail if it doesn't exist
-        try {
-          const activityData = await getProjectActivity(id);
-          setActivity(activityData);
-        } catch (activityErr) {
-          // Activity endpoint might not exist yet, just log and continue
-          console.log('Activity endpoint not available:', activityErr.message);
-          setActivity([]);
-        }
+        // Fetch activity data from the real API
+        await fetchActivities();
       } catch (err) {
         setError(err.message);
       } finally {
@@ -65,6 +61,29 @@ export default function ProjectDetail() {
       fetchProject();
     }
   }, [id]);
+
+  const fetchActivities = async (page = 1) => {
+    try {
+      const response = await api.get(`/activities/project/${id}?page=${page}&limit=10`);
+      
+      if (response.data.success && response.data.data) {
+        setActivities(response.data.data.activities || []);
+        setActivityPagination(response.data.data.pagination || null);
+        setActivityPage(page);
+      } else {
+        setActivities([]);
+        setActivityPagination(null);
+      }
+    } catch (activityErr) {
+      console.log('Activity endpoint error:', activityErr.message);
+      setActivities([]);
+      setActivityPagination(null);
+    }
+  };
+
+  const handleActivityPageChange = (page) => {
+    fetchActivities(page);
+  };
 
   const handleCreateTask = async (taskData) => {
     try {
@@ -320,28 +339,162 @@ export default function ProjectDetail() {
 
       {/* Activity Log */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
-        {activity.length === 0 ? (
-          <p className="text-gray-600">No recent activity</p>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+          {activityPagination && (
+            <span className="text-sm text-gray-600">
+              {activityPagination.totalItems} total activities
+            </span>
+          )}
+        </div>
+
+        {/* Activity Page Info */}
+        {activityPagination && activityPagination.totalPages > 1 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-blue-800">
+                <span className="font-medium">Page {activityPagination.currentPage}</span> of{' '}
+                <span className="font-medium">{activityPagination.totalPages}</span> •{' '}
+                <span className="font-medium">{activityPagination.totalItems}</span> total activities
+              </div>
+              <div className="text-xs text-blue-600">
+                Showing {activityPagination.itemsPerPage} activities per page
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activities.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-gray-600">No recent activity</p>
+          </div>
         ) : (
-          <div className="space-y-4">
-            {activity.slice(0, 5).map(item => (
-              <div key={item._id || item.id} className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-medium">
-                    {item.user.name.charAt(0).toUpperCase()}
-                  </span>
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Action
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Target
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Timestamp
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {activities.map((activity) => (
+                    <tr key={activity.activityId} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
+                            <span className="text-white text-xs font-medium">
+                              {activity.username.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="ml-3">
+                            <div className="text-sm font-medium text-gray-900">
+                              {activity.username}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          activity.action === 'created' ? 'bg-green-100 text-green-800' :
+                          activity.action === 'updated' ? 'bg-blue-100 text-blue-800' :
+                          activity.action === 'deleted' ? 'bg-red-100 text-red-800' :
+                          activity.action === 'added' ? 'bg-purple-100 text-purple-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {activity.action}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {activity.target}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(activity.timestamp).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Activity Pagination */}
+            {activityPagination && activityPagination.totalPages > 1 && (
+              <div className="flex items-center justify-between bg-white px-4 py-3 border-t border-gray-200 rounded-lg shadow mt-4">
+                <div className="flex-1 flex justify-between sm:hidden">
+                  <button
+                    onClick={() => handleActivityPageChange(Math.max(activityPage - 1, 1))}
+                    disabled={activityPage === 1}
+                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => handleActivityPageChange(Math.min(activityPage + 1, activityPagination.totalPages))}
+                    disabled={activityPage === activityPagination.totalPages}
+                    className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-900">
-                    <span className="font-medium">{item.user.name}</span> {item.action} {item.entityType} "{item.entityName}"
-                  </p>
-                  <p className="text-xs text-gray-500">{item.details}</p>
-                  <p className="text-xs text-gray-400">{new Date(item.timestamp).toLocaleString()}</p>
+                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm text-gray-700">
+                      Showing <span className="font-medium">{(activityPagination.currentPage - 1) * activityPagination.itemsPerPage + 1}</span> to{' '}
+                      <span className="font-medium">{Math.min(activityPagination.currentPage * activityPagination.itemsPerPage, activityPagination.totalItems)}</span> of{' '}
+                      <span className="font-medium">{activityPagination.totalItems}</span> results
+                    </p>
+                  </div>
+                  <div>
+                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                      <button
+                        onClick={() => handleActivityPageChange(Math.max(activityPage - 1, 1))}
+                        disabled={activityPage === 1}
+                        className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      {[...Array(activityPagination.totalPages)].map((_, i) => (
+                        <button
+                          key={i + 1}
+                          onClick={() => handleActivityPageChange(i + 1)}
+                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                            activityPage === i + 1
+                              ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                              : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => handleActivityPageChange(Math.min(activityPage + 1, activityPagination.totalPages))}
+                        disabled={activityPage === activityPagination.totalPages}
+                        className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 
@@ -382,5 +535,6 @@ export default function ProjectDetail() {
     </div>
   );
 }
+
 
 

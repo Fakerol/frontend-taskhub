@@ -150,18 +150,7 @@ export default function TaskList() {
   // Client-side pagination fallback
   const paginatedTasks = pagination ? tasks : tasks.slice(startIndex, startIndex + 6);
   
-  // Debug pagination info (remove in production)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Pagination Debug:', {
-      pagination,
-      totalPages,
-      currentPage,
-      tasksLength: tasks.length,
-      paginatedTasksLength: paginatedTasks.length,
-      filters
-    });
-  }
-
+  
   const getStatusStats = () => {
     const stats = {
       total: tasks.length,
