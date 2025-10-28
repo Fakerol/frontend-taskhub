@@ -1,28 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { z } from 'zod';
 import Modal from '../../components/Modal';
+import { getProject } from '../../api/projects';
 
-const taskSchema = z.object({
+const createTaskSchema = (requireProject = false) => z.object({
   title: z.string().min(1, 'Task title is required').max(200, 'Task title must be less than 200 characters'),
-  description: z.string().min(1, 'Description is required').max(1000, 'Description must be less than 1000 characters'),
+  description: z.string().optional(),
   priority: z.enum(['low', 'medium', 'high']),
-  assigneeId: z.number().optional(),
+  assignedTo: z.string().optional(),
   dueDate: z.string().min(1, 'Due date is required'),
-  tags: z.array(z.string()).optional()
+  status: z.enum(['todo', 'in-progress', 'done']).optional(),
+  projectId: requireProject ? z.string().min(1, 'Project selection is required') : z.string().optional()
 });
 
-export default function TaskForm({ isOpen, onClose, onSubmit, task, title, projectId, members = [] }) {
+export default function TaskForm({ isOpen, onClose, onSubmit, task, title, projectId, members = [], projects = [], projectsLoading = false }) {
   const [form, setForm] = useState({
     title: '',
     description: '',
     priority: 'medium',
-    assigneeId: '',
+    assignedTo: '',
     dueDate: '',
-    tags: []
+    status: 'todo',
+    projectId: ''
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [tagInput, setTagInput] = useState('');
+  const [selectedProjectMembers, setSelectedProjectMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const prevProjectIdRef = useRef(null);
 
   useEffect(() => {
     if (task) {
@@ -30,23 +35,51 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
         title: task.title || '',
         description: task.description || '',
         priority: task.priority || 'medium',
-        assigneeId: task.assigneeId || '',
+        assignedTo: task.assignedTo || '',
         dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
-        tags: task.tags || []
+        status: task.status || 'todo',
+        projectId: task.project?._id || task.projectId || ''
       });
     } else {
       setForm({
         title: '',
         description: '',
         priority: 'medium',
-        assigneeId: '',
+        assignedTo: '',
         dueDate: '',
-        tags: []
+        status: 'todo',
+        projectId: projectId || ''
       });
     }
     setErrors({});
-    setTagInput('');
-  }, [task, isOpen]);
+  }, [task, isOpen, projectId]);
+
+  // Fetch project members when project is selected
+  useEffect(() => {
+    const fetchProjectMembers = async () => {
+      // Only fetch if projectId actually changed and is not empty
+      if (form.projectId && form.projectId !== prevProjectIdRef.current && projects.length > 0) {
+        try {
+          setLoadingMembers(true);
+          const projectData = await getProject(form.projectId);
+          setSelectedProjectMembers(projectData.members || []);
+          prevProjectIdRef.current = form.projectId;
+        } catch (err) {
+          console.error('Failed to fetch project members:', err);
+          setSelectedProjectMembers([]);
+        } finally {
+          setLoadingMembers(false);
+        }
+      } else if (members.length > 0 && !form.projectId) {
+        // Use provided members if no project selection needed
+        setSelectedProjectMembers(members);
+      } else if (!form.projectId) {
+        setSelectedProjectMembers([]);
+      }
+    };
+
+    fetchProjectMembers();
+  }, [form.projectId]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -56,16 +89,6 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
     }
   };
 
-  const handleAddTag = () => {
-    if (tagInput.trim() && !form.tags.includes(tagInput.trim())) {
-      setForm(prev => ({ ...prev, tags: [...prev.tags, tagInput.trim()] }));
-      setTagInput('');
-    }
-  };
-
-  const handleRemoveTag = (tagToRemove) => {
-    setForm(prev => ({ ...prev, tags: prev.tags.filter(tag => tag !== tagToRemove) }));
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -75,11 +98,12 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
     try {
       const formData = {
         ...form,
-        assigneeId: form.assigneeId ? parseInt(form.assigneeId) : undefined,
+        projectId: form.projectId || projectId,
+        assignedTo: form.assignedTo || undefined,
         dueDate: new Date(form.dueDate).toISOString()
       };
       
-      taskSchema.parse(formData);
+      createTaskSchema(projects.length > 0 && !projectId).parse(formData);
       await onSubmit(formData);
     } catch (err) {
       if (err.errors) {
@@ -126,9 +150,40 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
           )}
         </div>
 
+        {/* Project Selection - Only show if projects are provided and no specific projectId */}
+        {projects.length > 0 && !projectId && (
+          <div>
+            <label htmlFor="projectId" className="block text-sm font-semibold text-gray-700 mb-2">
+              Project *
+            </label>
+            <select
+              id="projectId"
+              name="projectId"
+              value={form.projectId}
+              onChange={handleChange}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+                errors.projectId ? 'border-red-300 bg-red-50' : 'border-gray-300'
+              }`}
+              disabled={isSubmitting || projectsLoading}
+              required
+            >
+              <option value="">Select a project...</option>
+              {projects.map(project => (
+                <option key={project._id} value={project._id}>{project.name}</option>
+              ))}
+            </select>
+            {errors.projectId && (
+              <p className="mt-1 text-sm text-red-600">{errors.projectId}</p>
+            )}
+            {projectsLoading && (
+              <p className="mt-1 text-sm text-gray-500">Loading projects...</p>
+            )}
+          </div>
+        )}
+
         <div>
           <label htmlFor="description" className="block text-sm font-semibold text-gray-700 mb-2">
-            Description *
+            Description
           </label>
           <textarea
             id="description"
@@ -139,7 +194,7 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none ${
               errors.description ? 'border-red-300 bg-red-50' : 'border-gray-300'
             }`}
-            placeholder="Describe the task..."
+            placeholder="Describe the task (optional)..."
             disabled={isSubmitting}
           />
           {errors.description && (
@@ -167,22 +222,29 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
           </div>
 
           <div>
-            <label htmlFor="assigneeId" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="assignedTo" className="block text-sm font-semibold text-gray-700 mb-2">
               Assignee
             </label>
             <select
-              id="assigneeId"
-              name="assigneeId"
-              value={form.assigneeId}
+              id="assignedTo"
+              name="assignedTo"
+              value={form.assignedTo}
               onChange={handleChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              disabled={isSubmitting}
+              disabled={isSubmitting || loadingMembers}
             >
               <option value="">Unassigned</option>
-              {members.map(member => (
-                <option key={member.id} value={member.id}>{member.name}</option>
-              ))}
+              {loadingMembers ? (
+                <option value="" disabled>Loading members...</option>
+              ) : (
+                selectedProjectMembers.map(member => (
+                  <option key={member._id || member.id} value={member._id || member.id}>{member.name}</option>
+                ))
+              )}
             </select>
+            {loadingMembers && (
+              <p className="mt-1 text-sm text-gray-500">Loading project members...</p>
+            )}
           </div>
         </div>
 
@@ -206,50 +268,6 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
           )}
         </div>
 
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Tags
-          </label>
-          <div className="flex space-x-2 mb-2">
-            <input
-              type="text"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              placeholder="Add a tag..."
-              disabled={isSubmitting}
-            />
-            <button
-              type="button"
-              onClick={handleAddTag}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              disabled={isSubmitting}
-            >
-              Add
-            </button>
-          </div>
-          {form.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {form.tags.map((tag, index) => (
-                <span
-                  key={index}
-                  className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    className="ml-1 text-blue-600 hover:text-blue-800"
-                    disabled={isSubmitting}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
 
         <div className="flex justify-end space-x-3 pt-4">
           <button

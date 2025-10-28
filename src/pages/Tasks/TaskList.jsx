@@ -1,24 +1,75 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTasks } from '../../hooks/useTasks';
+import { useDebounce } from '../../hooks/useDebounce';
 import { useAuth } from '../../context/AuthContext';
+import { getProjects } from '../../api/projects';
+import { getTask } from '../../api/tasks';
 import TaskCard from '../../components/TaskCard';
 import TaskForm from './TaskForm';
+import TaskDetailsModal from '../../components/TaskDetailsModal';
 
 export default function TaskList() {
-  const { tasks, loading, error, addTask, editTask, removeTask, updateTaskStatus } = useTasks();
   const { user } = useAuth();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [taskDetails, setTaskDetails] = useState(null);
+  const [taskDetailsLoading, setTaskDetailsLoading] = useState(false);
   const [filters, setFilters] = useState({
     status: '',
     priority: '',
     search: '',
-    sortBy: 'dueDate'
+    sortBy: 'dueDate',
+    sortOrder: 'asc',
+    page: 1,
+    limit: 6
   });
+  const [searchInput, setSearchInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const tasksPerPage = 6;
 
+  // Debounce search input
+  const debouncedSearch = useDebounce(searchInput, 500);
+
+  // Update filters when debounced search changes
+  useEffect(() => {
+    setFilters(prev => ({ ...prev, search: debouncedSearch, page: 1 }));
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
+  // Use the useTasks hook with filters
+  const { tasks, loading, error, pagination, addTask, editTask, removeTask, updateTaskStatus, refetch } = useTasks(filters);
+
   const isOwner = user?.role === 'owner';
+
+  // Fetch projects for task creation
+  useEffect(() => {
+    const fetchProjects = async () => {
+      if (isOwner) {
+        try {
+          setProjectsLoading(true);
+          const projectsData = await getProjects();
+          // Handle both paginated and non-paginated responses
+          if (projectsData.projects && Array.isArray(projectsData.projects)) {
+            setProjects(projectsData.projects);
+          } else if (Array.isArray(projectsData)) {
+            setProjects(projectsData);
+          } else {
+            setProjects([]);
+          }
+        } catch (err) {
+          console.error('Failed to fetch projects:', err);
+          setProjects([]);
+        } finally {
+          setProjectsLoading(false);
+        }
+      }
+    };
+
+    fetchProjects();
+  }, [isOwner]);
 
   const handleCreateTask = async (taskData) => {
     try {
@@ -31,7 +82,7 @@ export default function TaskList() {
 
   const handleEditTask = async (taskData) => {
     try {
-      await editTask(editingTask.id, taskData);
+      await editTask(editingTask._id, taskData);
       setEditingTask(null);
     } catch (err) {
       console.error('Failed to update task:', err);
@@ -50,29 +101,66 @@ export default function TaskList() {
 
   const handleStatusChange = async (task) => {
     try {
-      const newStatus = task.status === 'completed' ? 'in_progress' : 'completed';
+      const newStatus = task.status === 'todo' ? 'in-progress' : 'done';
       await updateTaskStatus(task, newStatus);
     } catch (err) {
       console.error('Failed to update task status:', err);
     }
   };
 
-  // Filter and sort tasks
-  const filteredTasks = tasks.filter(task => {
-    if (filters.status && task.status !== filters.status) return false;
-    if (filters.priority && task.priority !== filters.priority) return false;
-    if (filters.search) {
-      const searchTerm = filters.search.toLowerCase();
-      if (!task.title.toLowerCase().includes(searchTerm) && 
-          !task.description.toLowerCase().includes(searchTerm)) return false;
+  const handleViewTaskDetails = async (task) => {
+    try {
+      setTaskDetailsLoading(true);
+      setSelectedTask(task);
+      
+      // Fetch detailed task information using the API
+      const detailedTask = await getTask(task._id);
+      setTaskDetails(detailedTask);
+    } catch (err) {
+      console.error('Failed to fetch task details:', err);
+      // Fallback to the basic task data if API call fails
+      setTaskDetails(task);
+    } finally {
+      setTaskDetailsLoading(false);
     }
-    return true;
-  });
+  };
 
-  // Pagination
-  const totalPages = Math.ceil(filteredTasks.length / tasksPerPage);
-  const startIndex = (currentPage - 1) * tasksPerPage;
-  const paginatedTasks = filteredTasks.slice(startIndex, startIndex + tasksPerPage);
+  const handleCloseTaskDetails = () => {
+    setSelectedTask(null);
+    setTaskDetails(null);
+    setTaskDetailsLoading(false);
+  };
+
+  // Handle filter changes and refetch data
+  const handleFilterChange = (newFilters) => {
+    setFilters(prev => ({ ...prev, ...newFilters, page: 1 }));
+    setCurrentPage(1);
+  };
+
+  // Handle pagination
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    setFilters(prev => ({ ...prev, page }));
+  };
+
+  // Get pagination info from API response
+  const totalPages = pagination ? pagination.totalPages : Math.max(1, Math.ceil(tasks.length / 6));
+  const startIndex = pagination ? (pagination.currentPage - 1) * pagination.itemsPerPage : (currentPage - 1) * 6;
+  
+  // Client-side pagination fallback
+  const paginatedTasks = pagination ? tasks : tasks.slice(startIndex, startIndex + 6);
+  
+  // Debug pagination info (remove in production)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Pagination Debug:', {
+      pagination,
+      totalPages,
+      currentPage,
+      tasksLength: tasks.length,
+      paginatedTasksLength: paginatedTasks.length,
+      filters
+    });
+  }
 
   const getStatusStats = () => {
     const stats = {
@@ -192,59 +280,94 @@ export default function TaskList() {
       {/* Filters */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter & Sort Tasks</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select
               value={filters.status}
-              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+              onChange={(e) => handleFilterChange({ status: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">All Status</option>
               <option value="todo">To Do</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="in-progress">In Progress</option>
+              <option value="done">Done</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
             <select
               value={filters.priority}
-              onChange={(e) => setFilters(prev => ({ ...prev, priority: e.target.value }))}
+              onChange={(e) => handleFilterChange({ priority: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">All Priority</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
               <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
             <select
               value={filters.sortBy}
-              onChange={(e) => setFilters(prev => ({ ...prev, sortBy: e.target.value }))}
+              onChange={(e) => handleFilterChange({ sortBy: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="dueDate">Due Date</option>
               <option value="title">Title</option>
               <option value="priority">Priority</option>
               <option value="status">Status</option>
+              <option value="createdAt">Created Date</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
               type="text"
-              value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search tasks..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
         </div>
+        
+        {/* Clear Filters Button */}
+        {(filters.status || filters.priority || searchInput) && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setSearchInput('');
+                handleFilterChange({ 
+                  status: '', 
+                  priority: '', 
+                  search: '' 
+                });
+              }}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Clear all filters
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Page Info */}
+      {totalPages > 1 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-blue-800">
+              <span className="font-medium">Page {pagination ? pagination.currentPage : currentPage}</span> of{' '}
+              <span className="font-medium">{totalPages}</span> •{' '}
+              <span className="font-medium">{pagination ? pagination.totalItems : tasks.length}</span> total tasks
+            </div>
+            <div className="text-xs text-blue-600">
+              Showing {pagination ? pagination.itemsPerPage : 6} tasks per page
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tasks Grid */}
       {paginatedTasks.length === 0 ? (
@@ -256,11 +379,11 @@ export default function TaskList() {
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks found</h3>
           <p className="text-gray-600 mb-6">
-            {filters.status || filters.priority || filters.search 
+            {filters.status || filters.priority || searchInput 
               ? 'Try adjusting your filters to see more tasks.' 
               : 'Create your first task to get started.'}
           </p>
-          {isOwner && !filters.status && !filters.priority && !filters.search && (
+          {isOwner && !filters.status && !filters.priority && !searchInput && (
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
@@ -274,11 +397,12 @@ export default function TaskList() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {paginatedTasks.map(task => (
               <TaskCard
-                key={task.id}
+                key={task._id}
                 task={task}
                 onEdit={setEditingTask}
                 onDelete={handleDeleteTask}
                 onStatusChange={handleStatusChange}
+                onViewDetails={handleViewTaskDetails}
               />
             ))}
           </div>
@@ -288,14 +412,14 @@ export default function TaskList() {
             <div className="flex items-center justify-between bg-white px-4 py-3 border-t border-gray-200 rounded-lg shadow">
               <div className="flex-1 flex justify-between sm:hidden">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
                   disabled={currentPage === 1}
                   className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Previous
                 </button>
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
                   disabled={currentPage === totalPages}
                   className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -305,15 +429,25 @@ export default function TaskList() {
               <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm text-gray-700">
-                    Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
-                    <span className="font-medium">{Math.min(startIndex + tasksPerPage, filteredTasks.length)}</span> of{' '}
-                    <span className="font-medium">{filteredTasks.length}</span> results
+                    {pagination ? (
+                      <>
+                        Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
+                        <span className="font-medium">{Math.min(startIndex + pagination.itemsPerPage, pagination.totalItems)}</span> of{' '}
+                        <span className="font-medium">{pagination.totalItems}</span> results
+                      </>
+                    ) : (
+                      <>
+                        Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
+                        <span className="font-medium">{Math.min(startIndex + 6, tasks.length)}</span> of{' '}
+                        <span className="font-medium">{tasks.length}</span> results
+                      </>
+                    )}
                   </p>
                 </div>
                 <div>
                   <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
                       disabled={currentPage === 1}
                       className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -322,7 +456,7 @@ export default function TaskList() {
                     {[...Array(totalPages)].map((_, i) => (
                       <button
                         key={i + 1}
-                        onClick={() => setCurrentPage(i + 1)}
+                        onClick={() => handlePageChange(i + 1)}
                         className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
                           currentPage === i + 1
                             ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
@@ -333,7 +467,7 @@ export default function TaskList() {
                       </button>
                     ))}
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
                       disabled={currentPage === totalPages}
                       className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -353,6 +487,8 @@ export default function TaskList() {
         onClose={() => setIsCreateModalOpen(false)}
         onSubmit={handleCreateTask}
         title="Create New Task"
+        projects={projects}
+        projectsLoading={projectsLoading}
       />
 
       {editingTask && (
@@ -362,8 +498,17 @@ export default function TaskList() {
           onSubmit={handleEditTask}
           task={editingTask}
           title="Edit Task"
+          projects={projects}
+          projectsLoading={projectsLoading}
         />
       )}
+
+      {/* Task Details Modal */}
+      <TaskDetailsModal
+        task={taskDetails}
+        isOpen={!!selectedTask}
+        onClose={handleCloseTaskDetails}
+      />
     </div>
   );
 }

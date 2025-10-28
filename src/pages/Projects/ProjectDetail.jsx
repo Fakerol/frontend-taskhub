@@ -6,6 +6,7 @@ import { useTasks } from '../../hooks/useTasks';
 import TaskCard from '../../components/TaskCard';
 import Modal from '../../components/Modal';
 import TaskForm from '../Tasks/TaskForm';
+import ProjectMembersModal from './ProjectMembersModal';
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -16,28 +17,43 @@ export default function ProjectDetail() {
   const [error, setError] = useState(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [filters, setFilters] = useState({
-    status: '',
-    priority: '',
-    assigneeId: '',
-    search: ''
+    projectId: id
   });
 
-  const { tasks, loading: tasksLoading, addTask, editTask, removeTask, updateTaskStatus } = useTasks(id, filters);
+  const { tasks, loading: tasksLoading, addTask, editTask, removeTask, updateTaskStatus } = useTasks(filters);
 
-  const isOwner = user?.role === 'owner' || project?.ownerId === user?.id;
+  const isOwner = user?.role === 'owner' || project?.createdBy === user?._id || project?.owner === user?._id;
+
+  const refreshProject = async () => {
+    try {
+      const projectData = await getProject(id);
+      setProject(projectData);
+    } catch (err) {
+      console.error('Failed to refresh project:', err);
+    }
+  };
 
   React.useEffect(() => {
     const fetchProject = async () => {
       try {
         setLoading(true);
         setError(null);
-        const [projectData, activityData] = await Promise.all([
-          getProject(id),
-          getProjectActivity(id)
-        ]);
+        
+        // Fetch project data
+        const projectData = await getProject(id);
         setProject(projectData);
-        setActivity(activityData);
+        
+        // Try to fetch activity data, but don't fail if it doesn't exist
+        try {
+          const activityData = await getProjectActivity(id);
+          setActivity(activityData);
+        } catch (activityErr) {
+          // Activity endpoint might not exist yet, just log and continue
+          console.log('Activity endpoint not available:', activityErr.message);
+          setActivity([]);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -52,7 +68,7 @@ export default function ProjectDetail() {
 
   const handleCreateTask = async (taskData) => {
     try {
-      await addTask({ ...taskData, projectId: parseInt(id) });
+      await addTask({ ...taskData, projectId: id });
       setIsTaskModalOpen(false);
     } catch (err) {
       console.error('Failed to create task:', err);
@@ -61,7 +77,7 @@ export default function ProjectDetail() {
 
   const handleEditTask = async (taskData) => {
     try {
-      await editTask(editingTask.id, taskData);
+      await editTask(editingTask._id, taskData);
       setEditingTask(null);
     } catch (err) {
       console.error('Failed to update task:', err);
@@ -87,19 +103,19 @@ export default function ProjectDetail() {
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
-      case 'planning': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'on_hold': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
+  const getTotalTasksCount = () => {
+    return tasks.length;
+  };
+
+  const getCompletedTasksCount = () => {
+    return tasks.filter(task => task.status === 'completed' || task.status === 'done').length;
   };
 
   const getProgressPercentage = () => {
-    if (!project || project.taskCount === 0) return 0;
-    return Math.round((project.completedTasks / project.taskCount) * 100);
+    const totalTasks = getTotalTasksCount();
+    const completedTasks = getCompletedTasksCount();
+    if (totalTasks === 0) return 0;
+    return Math.round((completedTasks / totalTasks) * 100);
   };
 
   if (loading) {
@@ -141,39 +157,48 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center space-x-3 mb-2">
-            <Link to="/projects" className="text-blue-600 hover:text-blue-800">
-              ← Back to Projects
-            </Link>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-          <p className="text-gray-600 mt-1">{project.description}</p>
+      <div className="space-y-4">
+        <div className="flex items-center space-x-3">
+          <Link to="/projects" className="text-blue-600 hover:text-blue-800">
+            ← Back to Projects
+          </Link>
         </div>
         
-        {isOwner && (
-          <button
-            onClick={() => setIsTaskModalOpen(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span>New Task</span>
-          </button>
-        )}
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
+          </div>
+          
+          {isOwner && (
+            <div className="flex space-x-3 ml-6">
+              <button
+                onClick={() => setIsMembersModalOpen(true)}
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                </svg>
+                <span>Manage Members</span>
+              </button>
+              <button
+                onClick={() => setIsTaskModalOpen(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span>New Task</span>
+              </button>
+            </div>
+          )}
+        </div>
+        
+        <p className="text-gray-600">{project.description}</p>
       </div>
 
       {/* Project Info */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Status</h3>
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(project.status)}`}>
-              {project.status.replace('_', ' ').toUpperCase()}
-            </span>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <h3 className="text-sm font-medium text-gray-600 mb-2">Progress</h3>
             <div className="flex items-center space-x-2">
@@ -189,67 +214,64 @@ export default function ProjectDetail() {
           <div>
             <h3 className="text-sm font-medium text-gray-600 mb-2">Tasks</h3>
             <p className="text-lg font-semibold text-gray-900">
-              {project.completedTasks}/{project.taskCount} completed
+              {getCompletedTasksCount()}/{getTotalTasksCount()} completed
             </p>
           </div>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Project Members */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter Tasks</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All Status</option>
-              <option value="todo">To Do</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-            <select
-              value={filters.priority}
-              onChange={(e) => setFilters(prev => ({ ...prev, priority: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All Priority</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Assignee</label>
-            <select
-              value={filters.assigneeId}
-              onChange={(e) => setFilters(prev => ({ ...prev, assigneeId: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All Assignees</option>
-              {project.members.map(member => (
-                <option key={member.id} value={member.id}>{member.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-            <input
-              type="text"
-              value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              placeholder="Search tasks..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Team Members</h3>
+          <span className="text-sm text-gray-600">{project.members?.length || 0} member{(project.members?.length || 0) !== 1 ? 's' : ''}</span>
         </div>
+        
+        {project.members && project.members.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {project.members.map(member => (
+              <div key={member._id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-medium">
+                    {member.name ? member.name.charAt(0).toUpperCase() : member.email.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {member.name || 'Unknown User'}
+                  </p>
+                  <p className="text-xs text-gray-600 truncate">{member.email}</p>
+                  {member.role && (
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      member.role === 'owner' 
+                        ? 'bg-purple-100 text-purple-800' 
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      {member.role}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+              </svg>
+            </div>
+            <p className="text-gray-600">No team members added yet</p>
+            {isOwner && (
+              <button
+                onClick={() => setIsMembersModalOpen(true)}
+                className="mt-3 text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                Add team members
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tasks */}
@@ -285,7 +307,7 @@ export default function ProjectDetail() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {tasks.map(task => (
               <TaskCard
-                key={task.id}
+                key={task._id}
                 task={task}
                 onEdit={setEditingTask}
                 onDelete={handleDeleteTask}
@@ -304,7 +326,7 @@ export default function ProjectDetail() {
         ) : (
           <div className="space-y-4">
             {activity.slice(0, 5).map(item => (
-              <div key={item.id} className="flex items-start space-x-3">
+              <div key={item._id || item.id} className="flex items-start space-x-3">
                 <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
                   <span className="text-white text-xs font-medium">
                     {item.user.name.charAt(0).toUpperCase()}
@@ -330,7 +352,9 @@ export default function ProjectDetail() {
         onSubmit={handleCreateTask}
         title="Create New Task"
         projectId={id}
-        members={project.members}
+        members={project.members || []}
+        projects={[]}
+        projectsLoading={false}
       />
 
       {editingTask && (
@@ -341,9 +365,20 @@ export default function ProjectDetail() {
           task={editingTask}
           title="Edit Task"
           projectId={id}
-          members={project.members}
+          members={project.members || []}
+          projects={[]}
+          projectsLoading={false}
         />
       )}
+
+      {/* Project Members Modal */}
+      <ProjectMembersModal
+        isOpen={isMembersModalOpen}
+        onClose={() => setIsMembersModalOpen(false)}
+        projectId={id}
+        members={project.members || []}
+        onMembersUpdate={refreshProject}
+      />
     </div>
   );
 }

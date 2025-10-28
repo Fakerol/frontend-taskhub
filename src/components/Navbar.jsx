@@ -8,13 +8,13 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
   return (
-    <nav className="bg-white shadow-lg border-b border-gray-200">
+    <nav className="bg-white shadow-lg border-b border-gray-200 backdrop-blur-sm bg-white/95">
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-end items-center h-16">
           {/* User Profile and Actions */}

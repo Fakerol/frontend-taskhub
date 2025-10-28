@@ -6,12 +6,19 @@ export function useProjects() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (params = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getProjects();
-      setProjects(data);
+      const response = await getProjects(params);
+      // Handle both paginated and non-paginated responses
+      if (response.projects) {
+        setProjects(response.projects);
+      } else if (Array.isArray(response)) {
+        setProjects(response);
+      } else {
+        setProjects([]);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -33,7 +40,7 @@ export function useProjects() {
   const editProject = async (id, projectData) => {
     try {
       const updatedProject = await updateProject(id, projectData);
-      setProjects(prev => prev.map(p => p.id === id ? updatedProject : p));
+      setProjects(prev => prev.map(p => p._id === id ? updatedProject : p));
       return updatedProject;
     } catch (err) {
       setError(err.message);
@@ -44,7 +51,7 @@ export function useProjects() {
   const removeProject = async (id) => {
     try {
       await deleteProject(id);
-      setProjects(prev => prev.filter(p => p.id !== id));
+      setProjects(prev => prev.filter(p => p._id !== id));
     } catch (err) {
       setError(err.message);
       throw err;

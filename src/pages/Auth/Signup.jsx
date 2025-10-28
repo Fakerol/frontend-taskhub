@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signupSchema } from "../../utils/validators";
-import { mockSignup } from "../../api/auth";
+import { signup as apiSignup } from "../../api/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
@@ -23,7 +23,7 @@ export default function Signup() {
     
     try {
       signupSchema.parse(form);
-      const res = await mockSignup(form);
+      const res = await apiSignup(form);
       login(res.user);
       navigate("/projects");
     } catch (err) {
@@ -129,7 +129,7 @@ export default function Signup() {
                   />
                 </div>
                 <div className="mt-2 text-xs text-gray-500">
-                  Password must be at least 8 characters long
+                  Password must be at least 6 characters long
                 </div>
               </div>
             </div>

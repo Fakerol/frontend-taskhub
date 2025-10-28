@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from "react";
+import { logout as apiLogout } from "../api/auth";
 
 const AuthContext = createContext(null);
 
@@ -13,9 +14,15 @@ export function AuthProvider({ children }) {
     localStorage.setItem("taskhub_user", JSON.stringify(userData));
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem("taskhub_user");
+  const logout = async () => {
+    try {
+      await apiLogout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      localStorage.removeItem("taskhub_user");
+    }
   };
 
   const isAuthenticated = !!user;

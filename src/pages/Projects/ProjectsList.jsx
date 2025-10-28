@@ -25,7 +25,7 @@ export default function ProjectsList() {
 
   const handleEditProject = async (projectData) => {
     try {
-      await editProject(editingProject.id, projectData);
+      await editProject(editingProject._id, projectData);
       setEditingProject(null);
     } catch (err) {
       console.error('Failed to update project:', err);
@@ -175,7 +175,7 @@ export default function ProjectsList() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map(project => (
             <ProjectCard
-              key={project.id}
+              key={project._id}
               project={project}
               onEdit={setEditingProject}
               onDelete={setDeletingProjectId}
