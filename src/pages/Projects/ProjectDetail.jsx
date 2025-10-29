@@ -115,7 +115,9 @@ export default function ProjectDetail() {
 
   const handleStatusChange = async (task) => {
     try {
-      const newStatus = task.status === 'completed' ? 'in_progress' : 'completed';
+      // Mark as done if not completed/done, otherwise toggle back to in-progress
+      // Use 'in-progress' format to match TaskList implementation (backend may normalize it)
+      const newStatus = (task.status === 'completed' || task.status === 'done') ? 'in-progress' : 'done';
       await updateTaskStatus(task, newStatus);
     } catch (err) {
       console.error('Failed to update task status:', err);

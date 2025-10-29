@@ -27,8 +27,20 @@ export default function Signup() {
       login(res.user);
       navigate("/projects");
     } catch (err) {
-      if (err.errors) setError(err.errors[0].message);
-      else setError(err.message);
+        // Check if it's a Zod validation error (has issues property)
+        if (err.issues) {
+          // Combine all validation error messages
+          const messages = err.issues.map(issue => issue.message).join(', ');
+          setError(messages);
+        } 
+        // Check if it's an axios/backend error (has response property)
+        else if (err.response?.data?.message) {
+          setError(err.response.data.message);
+        }
+        // Fallback to error message
+        else {
+          setError(err.message || 'An error occurred');
+        }
     } finally {
       setIsLoading(false);
     }

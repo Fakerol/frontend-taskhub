@@ -5,7 +5,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // Create axios instance
 const api = axios.create({
-  baseURL: 'http://54.234.133.14:5000/api/',
+  baseURL: 'http://localhost:5000/api/', // http://54.234.133.14:5000/api/
   headers: {
     'Content-Type': 'application/json',
   },
@@ -58,17 +58,22 @@ api.interceptors.response.use(
 
 // Authentication APIs
 export async function login(data) {
-  const response = await api.post('/auth/login', data);
-  const res = response.data;
+  try {
+    const response = await api.post('/auth/login', data);
+    const res = response.data;
 
-  if (!res.success) throw new Error(res.message || 'Login failed');
+    if (!res.success) throw new Error(res.message || 'Login failed');
 
-  const { user, accessToken, refreshToken } = res.data;
-  localStorage.setItem('taskhub_access_token', accessToken);
-  localStorage.setItem('taskhub_refresh_token', refreshToken);
-  localStorage.setItem('taskhub_user', JSON.stringify(user));
+    const { user, accessToken, refreshToken } = res.data;
+    localStorage.setItem('taskhub_access_token', accessToken);
+    localStorage.setItem('taskhub_refresh_token', refreshToken);
+    localStorage.setItem('taskhub_user', JSON.stringify(user));
 
-  return { user, accessToken, refreshToken };
+    return { user, accessToken, refreshToken };
+  } catch (error) {
+    console.error('Error logging in:', error);
+    throw new Error(error.response?.data?.message || 'Login failed');
+  }
 }
 
 export async function signup(data) {

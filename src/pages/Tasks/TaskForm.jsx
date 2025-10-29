@@ -35,7 +35,7 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
         title: task.title || '',
         description: task.description || '',
         priority: task.priority || 'medium',
-        assignedTo: task.assignedTo || '',
+        assignedTo: task.assignedTo?._id || task.assignedTo || '',
         dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
         status: task.status || 'todo',
         projectId: task.project?._id || task.projectId || ''
@@ -54,10 +54,16 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
     setErrors({});
   }, [task, isOpen, projectId]);
 
-  // Fetch project members when project is selected
+  // Fetch project members when project is selected (only when using project dropdown)
+  // Skip this effect entirely if projectId is provided as prop
   useEffect(() => {
+    // If projectId prop is provided, let the other useEffect handle members
+    if (projectId) {
+      return;
+    }
+
     const fetchProjectMembers = async () => {
-      // Only fetch if projectId actually changed and is not empty
+      // Only fetch if projectId is NOT provided as prop (i.e., using project dropdown)
       if (form.projectId && form.projectId !== prevProjectIdRef.current && projects.length > 0) {
         try {
           setLoadingMembers(true);
@@ -70,16 +76,21 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
         } finally {
           setLoadingMembers(false);
         }
-      } else if (members.length > 0 && !form.projectId) {
-        // Use provided members if no project selection needed
-        setSelectedProjectMembers(members);
       } else if (!form.projectId) {
         setSelectedProjectMembers([]);
       }
     };
 
     fetchProjectMembers();
-  }, [form.projectId]);
+  }, [form.projectId, projects.length, projectId]);
+
+  // Update members when members prop changes (for cases when projectId is provided directly)
+  useEffect(() => {
+    if (projectId) {
+      // When projectId is provided directly, use the members prop and update when it changes
+      setSelectedProjectMembers(members || []);
+    }
+  }, [members, projectId]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -106,14 +117,33 @@ export default function TaskForm({ isOpen, onClose, onSubmit, task, title, proje
       createTaskSchema(projects.length > 0 && !projectId).parse(formData);
       await onSubmit(formData);
     } catch (err) {
-      if (err.errors) {
-        const newErrors = {};
-        err.errors.forEach(error => {
-          newErrors[error.path[0]] = error.message;
+      // Check if it's a Zod validation error (has issues property)
+      if (err.issues) {
+        // Map field-level errors
+        const fieldErrors = {};
+        const generalErrors = [];
+        
+        err.issues.forEach(issue => {
+          const field = issue.path[0];
+          if (field) {
+            fieldErrors[field] = issue.message;
+          } else {
+            generalErrors.push(issue.message);
+          }
         });
-        setErrors(newErrors);
-      } else {
-        setErrors({ general: err.message });
+        
+        setErrors({
+          ...fieldErrors,
+          ...(generalErrors.length > 0 && { general: generalErrors.join(', ') })
+        });
+      } 
+      // Check if it's an axios/backend error (has response property)
+      else if (err.response?.data?.message) {
+        setErrors({ general: err.response.data.message });
+      }
+      // Fallback to error message
+      else {
+        setErrors({ general: err.message || 'An error occurred' });
       }
     } finally {
       setIsSubmitting(false);

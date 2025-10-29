@@ -11,6 +11,7 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, onVie
       case 'todo': return 'bg-gray-100 text-gray-800';
       case 'in_progress': return 'bg-blue-100 text-blue-800';
       case 'completed': return 'bg-green-100 text-green-800';
+      case 'done': return 'bg-green-100 text-green-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
@@ -50,12 +51,14 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, onVie
     }
   };
 
-  const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'completed';
+  const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'completed' && task.status !== 'done';
 
   return (
     <div 
-      className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 border border-gray-200 cursor-pointer ${
-        isOverdue ? 'border-red-200 bg-red-50' : ''
+      className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border cursor-pointer ${
+        isOverdue 
+          ? 'border-red-300 bg-red-50' 
+          : 'border-gray-200'
       }`}
       onClick={() => onViewDetails && onViewDetails(task)}
     >
@@ -63,8 +66,12 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, onVie
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
-            <h3 className="text-lg font-medium text-gray-900 mb-1">{task.title}</h3>
-            <p className="text-gray-600 text-sm line-clamp-2">{task.description}</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-1">
+              {task.title}
+            </h3>
+            <p className="text-gray-600 text-sm line-clamp-2">
+              {task.description}
+            </p>
           </div>
           
           {/* Actions */}
@@ -104,7 +111,11 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, onVie
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-2">
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-              {task.status.replace('_', ' ').toUpperCase()}
+              {(task.status === 'done' || task.status === 'completed') 
+                ? 'DONE' 
+                : (task.status === 'in-progress' || task.status === 'in_progress')
+                ? 'IN PROGRESS'
+                : 'TODO'}
             </span>
             <div className={`flex items-center space-x-1 ${getPriorityColor(task.priority)}`}>
               {getPriorityIcon(task.priority)}
@@ -113,7 +124,7 @@ export default function TaskCard({ task, onEdit, onDelete, onStatusChange, onVie
           </div>
           
           {/* Status Change Button */}
-          {(isOwner || isAssignee) && task.status !== 'completed' && (
+          {(isOwner || isAssignee) && task.status !== 'completed' && task.status !== 'done' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();

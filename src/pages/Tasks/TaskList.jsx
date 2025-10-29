@@ -3,8 +3,7 @@ import { useTasks } from '../../hooks/useTasks';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useAuth } from '../../context/AuthContext';
 import { getProjects } from '../../api/projects';
-import { getTask } from '../../api/tasks';
-import TaskCard from '../../components/TaskCard';
+import { getTask, getTasks } from '../../api/tasks';
 import TaskForm from './TaskForm';
 import TaskDetailsModal from '../../components/TaskDetailsModal';
 
@@ -17,6 +16,8 @@ export default function TaskList() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [taskDetails, setTaskDetails] = useState(null);
   const [taskDetailsLoading, setTaskDetailsLoading] = useState(false);
+  const [stats, setStats] = useState({ total: 0, todo: 0, completed: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
   const [filters, setFilters] = useState({
     status: '',
     priority: '',
@@ -43,6 +44,67 @@ export default function TaskList() {
   const { tasks, loading, error, pagination, addTask, editTask, removeTask, updateTaskStatus, refetch } = useTasks(filters);
 
   const isOwner = user?.role === 'owner';
+
+  // Fetch stats for all tasks (without pagination/filters to get accurate totals)
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setStatsLoading(true);
+        // Fetch all tasks without pagination and filters to get accurate stats
+        const allTasksResponse = await getTasks({});
+        let allTasks = [];
+        
+        if (allTasksResponse.tasks && Array.isArray(allTasksResponse.tasks)) {
+          allTasks = allTasksResponse.tasks;
+        } else if (Array.isArray(allTasksResponse)) {
+          allTasks = allTasksResponse;
+        }
+
+        // Calculate stats from all tasks
+        const total = allTasks.length;
+        const todo = allTasks.filter(t => t.status === 'todo' || t.status === 'in-progress' || t.status === 'in_progress').length;
+        const completed = allTasks.filter(t => t.status === 'completed' || t.status === 'done').length;
+        
+        setStats({ total, todo, completed });
+      } catch (err) {
+        console.error('Failed to fetch task stats:', err);
+        // Fallback to using pagination totals if available
+        if (pagination) {
+          setStats({
+            total: pagination.totalItems || 0,
+            todo: 0,
+            completed: 0
+          });
+        }
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []); // Only fetch once on mount
+
+  // Function to refetch stats (called after task operations)
+  const refreshStats = async () => {
+    try {
+      const allTasksResponse = await getTasks({});
+      let allTasks = [];
+      
+      if (allTasksResponse.tasks && Array.isArray(allTasksResponse.tasks)) {
+        allTasks = allTasksResponse.tasks;
+      } else if (Array.isArray(allTasksResponse)) {
+        allTasks = allTasksResponse;
+      }
+
+      const total = allTasks.length;
+      const todo = allTasks.filter(t => t.status === 'todo' || t.status === 'in-progress' || t.status === 'in_progress').length;
+      const completed = allTasks.filter(t => t.status === 'completed' || t.status === 'done').length;
+      
+      setStats({ total, todo, completed });
+    } catch (err) {
+      console.error('Failed to update task stats:', err);
+    }
+  };
 
   // Fetch projects for task creation
   useEffect(() => {
@@ -75,6 +137,7 @@ export default function TaskList() {
     try {
       await addTask(taskData);
       setIsCreateModalOpen(false);
+      await refreshStats(); // Refresh stats after creating task
     } catch (err) {
       console.error('Failed to create task:', err);
     }
@@ -84,6 +147,7 @@ export default function TaskList() {
     try {
       await editTask(editingTask._id, taskData);
       setEditingTask(null);
+      await refreshStats(); // Refresh stats after updating task
     } catch (err) {
       console.error('Failed to update task:', err);
     }
@@ -93,6 +157,7 @@ export default function TaskList() {
     if (window.confirm('Are you sure you want to delete this task?')) {
       try {
         await removeTask(taskId);
+        await refreshStats(); // Refresh stats after deleting task
       } catch (err) {
         console.error('Failed to delete task:', err);
       }
@@ -101,8 +166,10 @@ export default function TaskList() {
 
   const handleStatusChange = async (task) => {
     try {
-      const newStatus = task.status === 'todo' ? 'in-progress' : 'done';
+      // Toggle between todo and done only
+      const newStatus = task.status === 'todo' || task.status === 'in-progress' || task.status === 'in_progress' ? 'done' : 'todo';
       await updateTaskStatus(task, newStatus);
+      await refreshStats(); // Refresh stats after status change
     } catch (err) {
       console.error('Failed to update task status:', err);
     }
@@ -150,18 +217,6 @@ export default function TaskList() {
   // Client-side pagination fallback
   const paginatedTasks = pagination ? tasks : tasks.slice(startIndex, startIndex + 6);
   
-  
-  const getStatusStats = () => {
-    const stats = {
-      total: tasks.length,
-      todo: tasks.filter(t => t.status === 'todo').length,
-      in_progress: tasks.filter(t => t.status === 'in_progress').length,
-      completed: tasks.filter(t => t.status === 'completed').length
-    };
-    return stats;
-  };
-
-  const stats = getStatusStats();
 
   if (loading) {
     return (
@@ -208,7 +263,7 @@ export default function TaskList() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -239,27 +294,13 @@ export default function TaskList() {
 
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">In Progress</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.in_progress}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
             <div className="p-2 bg-green-100 rounded-lg">
               <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Completed</p>
+              <p className="text-sm font-medium text-gray-600">Done</p>
               <p className="text-2xl font-semibold text-gray-900">{stats.completed}</p>
             </div>
           </div>
@@ -279,7 +320,6 @@ export default function TaskList() {
             >
               <option value="">All Status</option>
               <option value="todo">To Do</option>
-              <option value="in-progress">In Progress</option>
               <option value="done">Done</option>
             </select>
           </div>
@@ -358,7 +398,7 @@ export default function TaskList() {
         </div>
       )}
 
-      {/* Tasks Grid */}
+      {/* Tasks Table */}
       {paginatedTasks.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg shadow">
           <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -383,17 +423,174 @@ export default function TaskList() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {paginatedTasks.map(task => (
-              <TaskCard
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Title
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Priority
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Assignee
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Due Date
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tags
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {paginatedTasks.map(task => {
+                    const isAssignee = task.assignedTo?._id === user?.id;
+                    const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'completed' && task.status !== 'done';
+                    
+                    const getStatusColor = (status) => {
+                      switch (status) {
+                        case 'todo': return 'bg-gray-100 text-gray-800';
+                        case 'in_progress': return 'bg-blue-100 text-blue-800';
+                        case 'completed': return 'bg-green-100 text-green-800';
+                        case 'done': return 'bg-green-100 text-green-800';
+                        case 'cancelled': return 'bg-red-100 text-red-800';
+                        default: return 'bg-gray-100 text-gray-800';
+                      }
+                    };
+
+                    const getPriorityColor = (priority) => {
+                      switch (priority) {
+                        case 'high': return 'text-red-600';
+                        case 'medium': return 'text-yellow-600';
+                        case 'low': return 'text-green-600';
+                        default: return 'text-gray-600';
+                      }
+                    };
+
+                    const getStatusLabel = (status) => {
+                      if (status === 'done' || status === 'completed') return 'DONE';
+                      if (status === 'in-progress' || status === 'in_progress') return 'IN PROGRESS';
+                      return 'TODO';
+                    };
+
+                    return (
+                      <tr 
                 key={task._id}
-                task={task}
-                onEdit={setEditingTask}
-                onDelete={handleDeleteTask}
-                onStatusChange={handleStatusChange}
-                onViewDetails={handleViewTaskDetails}
-              />
-            ))}
+                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${
+                          isOverdue ? 'bg-red-50' : ''
+                        }`}
+                        onClick={() => handleViewTaskDetails(task)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <div className="text-sm font-medium text-gray-900">
+                              {task.title}
+                            </div>
+                            {task.description && (
+                              <div className="text-sm text-gray-500 truncate max-w-xs">
+                                {task.description}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                            {getStatusLabel(task.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`text-sm font-medium ${getPriorityColor(task.priority)}`}>
+                            {task.priority ? task.priority.toUpperCase() : '-'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
+                              <span className="text-white text-xs font-medium">
+                                {task.assignedTo?.name?.charAt(0)?.toUpperCase() || 'U'}
+                              </span>
+                            </div>
+                            <span className="text-sm text-gray-900">
+                              {task.assignedTo?.name || 'Unassigned'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className={`flex items-center space-x-1 text-sm ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {task.tags && task.tags.length > 0 ? (
+                              task.tags.map((tag, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800"
+                                >
+                                  {tag}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-sm text-gray-400">-</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex items-center justify-end space-x-2" onClick={(e) => e.stopPropagation()}>
+                            {(isOwner || isAssignee) && task.status !== 'completed' && task.status !== 'done' && (
+                              <button
+                                onClick={() => handleStatusChange(task)}
+                                className="text-blue-600 hover:text-blue-900 transition-colors"
+                                title="Mark Complete"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </button>
+                            )}
+                            {(isOwner || isAssignee) && (
+                              <button
+                                onClick={() => setEditingTask(task)}
+                                className="text-gray-400 hover:text-blue-600 transition-colors"
+                                title="Edit task"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                            )}
+                            {isOwner && (
+                              <button
+                                onClick={() => handleDeleteTask(task._id)}
+                                className="text-gray-400 hover:text-red-600 transition-colors"
+                                title="Delete task"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Pagination */}
